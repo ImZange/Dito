@@ -1,0 +1,11 @@
+# Secretos y credenciales
+credentials.json
+.env
+
+# Archivos de Python y entorno virtual
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+token.json
+
