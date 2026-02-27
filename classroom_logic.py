@@ -1,13 +1,11 @@
 import os.path
+import os
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-import os
-# 1. Importar load_dotenv
 from dotenv import load_dotenv
 
-# 2. Cargar las variables del archivo .env al inicio
 load_dotenv()
 
 SCOPES = [
@@ -24,8 +22,6 @@ def obtener_tareas():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            # 3. En lugar de leer un archivo físico, creamos un diccionario
-            # con la estructura que la API espera, usando las variables de entorno.
             client_config = {
                 "installed": {
                     "client_id": os.getenv("GOOGLE_CLIENT_ID"),
@@ -35,8 +31,6 @@ def obtener_tareas():
                     "redirect_uris": ["http://localhost"]
                 }
             }
-            
-            # 4. Cambiamos 'from_client_secrets_file' por 'from_client_config'
             flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
             creds = flow.run_local_server(port=0)
             
@@ -45,19 +39,58 @@ def obtener_tareas():
 
     try:
         service = build('classroom', 'v1', credentials=creds)
-        results = service.courses().list(pageSize=10).execute()
+        results = service.courses().list(pageSize=15).execute()
         courses = results.get('courses', [])
 
-        lista_procesada = []
+        todas_las_tareas_pendientes = []
+        
         if not courses:
-            return [("Sin cursos", "No se encontraron cursos activos", "")]
-        else:
-            for course in courses:
-                lista_procesada.append((course['name'], "Curso detectado", "Activo"))
-            return lista_procesada
+            return [("Sin cursos", "No se encontraron clases", "Info", "none")]
+
+        for course in courses:
+            c_id = course['id']
+            c_name = course['name']
+            
+            # 1. Obtener detalles de tareas
+            cw_results = service.courses().courseWork().list(courseId=c_id).execute()
+            tasks_data = {t['id']: t for t in cw_results.get('courseWork', [])}
+            
+            if not tasks_data:
+                continue
+
+            # 2. Obtener tus entregas personales
+            subs_results = service.courses().courseWork().studentSubmissions().list(
+                courseId=c_id, courseWorkId='-', userId='me').execute()
+            submissions = subs_results.get('studentSubmissions', [])
+
+            for sub in submissions:
+                # Filtrar solo estados pendientes
+                if sub.get('state') in ['NEW', 'CREATED', 'RECLAIMED_BY_STUDENT']:
+                    work_id = sub.get('courseWorkId')
+                    task = tasks_data.get(work_id)
+                    
+                    if task:
+                        titulo = task.get('title')
+                        t_id = task.get('id') # Extraemos el ID para SQLite
+                        due = task.get('dueDate')
+                        
+                        if due:
+                            fecha = f"{due.get('day')}/{due.get('month')}/{due.get('year')}"
+                        else:
+                            fecha = "Sin fecha"
+                        
+                        # Retornamos la tupla de 4 elementos requerida por gui.py
+                        todas_las_tareas_pendientes.append((titulo, c_name, fecha, t_id))
+            
+        # Nota: He eliminado el bucle 'for task in tasks' que causaba el error
+
+        if not todas_las_tareas_pendientes:
+            return [("¡Al día!", "No tienes tareas pendientes", "Genial", "none")]
+            
+        return todas_las_tareas_pendientes
 
     except Exception as error:
-        print(f"Ocurrió un error con la API de Google: {error}")
+        print(f"Error en API Classroom: {error}")
         raise error
 
 def cerrar_sesion():
