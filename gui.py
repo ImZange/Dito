@@ -1,178 +1,195 @@
 import customtkinter as ctk
 import classroom_logic
 import db_logic
-from datetime import datetime
+import threading
 
-# Definición de colores estilo "Material Dark"
-COLORS = {
-    "bg_dark": "#1A1A1A",
-    "sidebar": "#252525",
-    "accent": "#3498DB",
-    "success": "#2ECC71",
-    "danger": "#E74C3C",
-    "text_main": "#FFFFFF",
-    "text_dim": "#AAAAAA",
-    "card_bg": "#2E2E2E",
-    "card_border": "#3D3D3D"
-}
+# Configuración de apariencia
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
 
 class AppEstudio(ctk.CTk):
     def __init__(self):
         super().__init__()
-
         self.title("DITO | Asistente de Estudio")
         self.geometry("1100x750")
         
+        # Inicializar base de datos local
         db_logic.init_db()
+        
+        # Atributo para rastrear el progreso de la sesión
+        self.tareas_completadas_hoy = 0
 
-        # Configuración del Layout
+        # Layout Principal
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
-        self.configure(fg_color=COLORS["bg_dark"])
 
-        # --- SIDEBAR PROFESIONAL ---
-        self.sidebar = ctk.CTkFrame(self, width=240, corner_radius=0, fg_color=COLORS["sidebar"], border_width=0)
+        # --- Sidebar (Menú Lateral) ---
+        self.sidebar = ctk.CTkFrame(self, width=220, corner_radius=0)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
         
-        self.logo_label = ctk.CTkLabel(
-            self.sidebar, text="DITO", 
-            font=ctk.CTkFont(family="Segoe UI", size=28, weight="bold"),
-            text_color=COLORS["accent"]
-        )
-        self.logo_label.pack(pady=(40, 10))
+        ctk.CTkLabel(self.sidebar, text="DITO", font=("Segoe UI", 26, "bold"), text_color="#3498DB").pack(pady=30)
         
-        self.status_label = ctk.CTkLabel(
-            self.sidebar, text="Ingeniería Inteligente", 
-            font=ctk.CTkFont(size=11), text_color=COLORS["text_dim"]
+        # Botones Principales del Menú
+        self.btn_pendientes = ctk.CTkButton(
+            self.sidebar, text="Mis Pendientes", border_color="blue", 
+            font=("Segoe UI", 13, "bold"), height=40, command=self.mostrar_pendientes
         )
-        self.status_label.pack(pady=(0, 40))
+        self.btn_pendientes.pack(pady=10, padx=20, fill="x")
 
-        # Botones del menú
-        self.btn_sync = self.create_menu_button("Sincronizar", self.sync_classroom, COLORS["accent"])
-        self.btn_logout = self.create_menu_button("Cerrar Sesión", self.logout_classroom, COLORS["danger"])
-
-        # --- PANEL DE CONTENIDO ---
-        self.container = ctk.CTkFrame(self, fg_color="transparent")
-        self.container.grid(row=0, column=1, padx=30, pady=30, sticky="nsew")
-        self.container.grid_columnconfigure(0, weight=1)
-        self.container.grid_rowconfigure(1, weight=1)
-
-        # Encabezado dinámico
-        self.header_label = ctk.CTkLabel(
-            self.container, text="Mis Pendientes", 
-            font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"),
-            anchor="w"
+        # Botón Ayudante (Sin funcionalidad por ahora)
+        self.btn_ayudante = ctk.CTkButton(
+            self.sidebar, text="Ayudante", fg_color="transparent", border_width=2, 
+            border_color="#9B59B6", text_color="white", font=("Segoe UI", 13, "bold"), 
+            height=40, command=self.placeholder_function
         )
-        self.header_label.grid(row=0, column=0, sticky="w", pady=(0, 20))
+        self.btn_ayudante.pack(pady=10, padx=20, fill="x")
 
-        # Marco de Tareas
-        self.main_frame = ctk.CTkScrollableFrame(
-            self.container, 
-            fg_color="transparent",
-            label_text=""
+        # Botón Focus Mode (Sin funcionalidad por ahora)
+        self.btn_focus = ctk.CTkButton(
+            self.sidebar, text="Focus Mode", fg_color="transparent", border_width=2, 
+            border_color="#E67E22", text_color="white", font=("Segoe UI", 13, "bold"), 
+            height=40, command=self.placeholder_function
         )
-        self.main_frame.grid(row=1, column=0, sticky="nsew")
+        self.btn_focus.pack(pady=10, padx=20, fill="x")
 
-    def create_menu_button(self, text, command, color):
-        btn = ctk.CTkButton(
-            self.sidebar, text=text, command=command,
-            fg_color="transparent", border_width=2, border_color=color,
-            hover_color=color, text_color=COLORS["text_main"],
-            font=ctk.CTkFont(size=13, weight="bold"), height=40
+        # Espaciador para empujar el botón de cerrar sesión al fondo
+        self.spacer = ctk.CTkLabel(self.sidebar, text="")
+        self.spacer.pack(expand=True, fill="both")
+
+        # Botón de Cerrar Sesión
+        self.btn_logout = ctk.CTkButton(
+            self.sidebar, text="Cerrar Sesión", fg_color="#C0392B", 
+            hover_color="#922B21", font=("Segoe UI", 13, "bold"), 
+            height=40, command=self.logout_classroom
         )
-        btn.pack(pady=10, padx=30, fill="x")
-        return btn
+        self.btn_logout.pack(pady=20, padx=20, fill="x")
 
-    def sync_classroom(self):
-        self.btn_sync.configure(state="disabled", text="Procesando...")
-        self.update()
-        
-        for widget in self.main_frame.winfo_children():
-            widget.destroy()
-            
-        try:
-            tareas_api = classroom_logic.obtener_tareas()
-            estados_locales = db_logic.obtener_estados_locales()
-            
-            # Contador de tareas para el encabezado
-            pendientes_reales = [t for t in tareas_api if t[3] not in estados_locales]
-            self.header_label.configure(text=f"Tareas Pendientes ({len(pendientes_reales)})")
+        # --- Contenedor de Contenido ---
+        self.main_container = ctk.CTkFrame(self, fg_color="transparent")
+        self.main_container.grid(row=0, column=1, padx=30, pady=30, sticky="nsew")
+        self.main_container.grid_columnconfigure(0, weight=1)
 
-            for titulo, materia, fecha, t_id in tareas_api:
-                if t_id not in estados_locales:
-                    self.add_task_card(titulo, materia, fecha, t_id)
-                
-        except Exception as e:
-            self.add_task_card("Error de sincronización", "Verifica tu conexión", "Fallo", "err")
-            
-        self.btn_sync.configure(state="normal", text="Sincronizar")
+        # Encabezado y Contador Dinámico
+        self.lbl_count = ctk.CTkLabel(self.main_container, text="Mis Pendientes (0)", font=("Segoe UI", 22, "bold"))
+        self.lbl_count.pack(anchor="w", pady=(0, 10))
 
-    def add_task_card(self, titulo, materia, fecha, t_id):
-        # Contenedor principal de la tarjeta
-        card = ctk.CTkFrame(
-            self.main_frame, fg_color=COLORS["card_bg"], 
-            corner_radius=15, border_width=1, border_color=COLORS["card_border"]
-        )
-        card.pack(fill="x", pady=10, padx=5)
+        # Barra de Progreso Dinámica
+        self.progress = ctk.CTkProgressBar(self.main_container, orientation="horizontal", height=12)
+        self.progress.pack(fill="x", pady=(0, 20))
+        self.progress.set(0)
 
-        # --- SECCIÓN IZQUIERDA: TEXTO ---
-        info_frame = ctk.CTkFrame(card, fg_color="transparent")
-        info_frame.pack(side="left", fill="both", expand=True, padx=25, pady=20)
-        
-        ctk.CTkLabel(
-            info_frame, text=materia.upper(), 
-            font=ctk.CTkFont(size=10, weight="bold"), 
-            text_color=COLORS["accent"], anchor="w"
-        ).pack(fill="x")
+        # Botonera de Acciones
+        self.btn_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        self.btn_frame.pack(fill="x", pady=(0, 20))
 
-        ctk.CTkLabel(
-            info_frame, text=titulo, 
-            font=ctk.CTkFont(size=16, weight="bold"), 
-            text_color=COLORS["text_main"], anchor="w"
-        ).pack(fill="x")
+        self.btn_add = ctk.CTkButton(self.btn_frame, text="+ Agregar Pendiente", command=self.agregar_manual)
+        self.btn_add.pack(side="left", padx=5)
 
-        # --- SECCIÓN DERECHA: FECHA Y ACCIONES ---
-        action_frame = ctk.CTkFrame(card, fg_color="transparent")
-        action_frame.pack(side="right", padx=25)
+        self.btn_sync = ctk.CTkButton(self.btn_frame, text="Sincronizar Classroom", fg_color="#5D6D7E", command=self.sync_classroom)
+        self.btn_sync.pack(side="left", padx=5)
 
-        # Diseño de Fecha tipo 'Badge'
-        date_badge = ctk.CTkFrame(action_frame, fg_color=COLORS["bg_dark"], corner_radius=8)
-        date_badge.pack(side="left", padx=20)
-        
-        ctk.CTkLabel(
-            date_badge, text=fecha, 
-            font=ctk.CTkFont(size=12, weight="bold"),
-            padx=15, pady=8
-        ).pack()
+        # Marco Deslizable para Tareas
+        self.tasks_frame = ctk.CTkScrollableFrame(self.main_container, fg_color="transparent")
+        self.tasks_frame.pack(fill="both", expand=True)
 
-        # Botones de acción minimalistas
-        btn_done = ctk.CTkButton(
-            action_frame, text="Completar", width=100, height=32,
-            fg_color=COLORS["success"], hover_color="#27AE60",
-            command=lambda: self.gestionar_local(t_id, "completado", card)
-        )
-        btn_done.pack(side="left", padx=5)
+    def placeholder_function(self):
+        """Función temporal para botones sin funcionalidad actual."""
+        print("Esta función estará disponible en futuras actualizaciones del proyecto.")
 
-        btn_hide = ctk.CTkButton(
-            action_frame, text="Ocultar", width=80, height=32,
-            fg_color="transparent", border_width=1, border_color=COLORS["text_dim"],
-            hover_color=COLORS["card_border"],
-            command=lambda: self.gestionar_local(t_id, "oculto", card)
-        )
-        btn_hide.pack(side="left", padx=5)
-
-    def gestionar_local(self, t_id, estado, widget):
-        db_logic.guardar_estado_local(t_id, estado)
-        widget.destroy()
-        # Actualizar contador en el encabezado
-        actual = int(self.header_label.cget("text").split("(")[1].split(")")[0])
-        self.header_label.configure(text=f"Tareas Pendientes ({actual - 1})")
+    def mostrar_pendientes(self):
+        """Refresca la vista de tareas (puedes añadir lógica de navegación aquí luego)."""
+        self.sync_classroom()
 
     def logout_classroom(self):
-        for widget in self.main_frame.winfo_children():
-            widget.destroy()
+        """Limpia la sesión y cierra la app."""
         if classroom_logic.cerrar_sesion():
-            self.header_label.configure(text="Sesión Finalizada")
+            self.destroy()
+
+    def agregar_manual(self):
+        """Captura nombre y fecha para la nueva tarea manual."""
+        dialog_n = ctk.CTkInputDialog(text="¿Qué tarea deseas agregar?", title="Nueva Tarea")
+        nombre = dialog_n.get_input()
+        
+        if nombre:
+            dialog_f = ctk.CTkInputDialog(text="Fecha de entrega (ej: Hoy, Mañana, 05/03):", title="Asignar Fecha")
+            fecha = dialog_f.get_input()
+            if not fecha: fecha = "Hoy"
+            
+            db_logic.guardar_tarea_manual(nombre, "Manual", fecha)
+            self.sync_classroom()
+
+    def sync_classroom(self):
+        """Inicia la sincronización en un hilo secundario para evitar bloqueos."""
+        self.btn_sync.configure(state="disabled", text="Sincronizando...")
+        threading.Thread(target=self._worker_sync, daemon=True).start()
+
+    def _worker_sync(self):
+        """Procesa los datos en segundo plano."""
+        try:
+            api_data = classroom_logic.obtener_tareas()
+            manual_data = db_logic.obtener_tareas_manuales()
+            locales = db_logic.obtener_estados_locales()
+            self.after(0, self._update_ui, api_data, manual_data, locales)
+        except Exception as e:
+            print(f"Error en sincronización: {e}")
+            self.after(0, lambda: self.btn_sync.configure(state="normal", text="Reintentar"))
+
+    def _update_ui(self, api, manual, locales):
+        """Actualiza la interfaz y calcula el progreso inicial."""
+        for w in self.tasks_frame.winfo_children(): w.destroy()
+        
+        pendientes_api = [t for t in api if len(t) > 3 and t[3] not in locales]
+        total_actual = len(pendientes_api) + len(manual)
+        
+        self.lbl_count.configure(text=f"Mis Pendientes ({total_actual})")
+        self.actualizar_barra_progreso(total_actual)
+
+        for t in pendientes_api: self.add_task_card(t[0], t[1], t[2], t[3], "api")
+        for m in manual: self.add_task_card(m[0], m[1], m[2], m[3], "manual")
+        
+        self.btn_sync.configure(state="normal", text="Sincronizar Classroom")
+
+    def actualizar_barra_progreso(self, pendientes):
+        """Calcula el porcentaje completado: Hechas / (Hechas + Pendientes)."""
+        if pendientes == 0:
+            self.progress.set(1.0)
+        else:
+            total_estimado = pendientes + self.tareas_completadas_hoy
+            porcentaje = self.tareas_completadas_hoy / total_estimado
+            self.progress.set(porcentaje)
+
+    def add_task_card(self, titulo, materia, fecha, t_id, tipo):
+        """Crea una tarjeta visual para la tarea."""
+        card = ctk.CTkFrame(self.tasks_frame, corner_radius=12, border_width=1, border_color="#3D3D3D")
+        card.pack(fill="x", pady=8, padx=5)
+        
+        info = ctk.CTkFrame(card, fg_color="transparent")
+        info.pack(side="left", padx=20, pady=15)
+        
+        ctk.CTkLabel(info, text=materia.upper(), font=("Arial", 9, "bold"), text_color="#3498DB").pack(anchor="w")
+        ctk.CTkLabel(info, text=titulo, font=("Arial", 15, "bold")).pack(anchor="w")
+        ctk.CTkLabel(info, text=f"Entrega: {fecha}", font=("Arial", 11), text_color="#AAAAAA").pack(anchor="w")
+
+        btn_done = ctk.CTkButton(card, text="✓", width=45, fg_color="#2ECC71", hover_color="#27AE60",
+                                command=lambda: self.completar(t_id, tipo, card))
+        btn_done.pack(side="right", padx=20)
+
+    def completar(self, t_id, tipo, widget):
+        """Marca como completada, actualiza la sesión y la barra."""
+        if tipo == "api": 
+            db_logic.guardar_estado_local(t_id, "completado")
+        else: 
+            db_logic.marcar_manual_completada(t_id)
+            
+        widget.destroy()
+        self.tareas_completadas_hoy += 1
+        
+        try:
+            actual = int(self.lbl_count.cget("text").split("(")[1].split(")")[0]) - 1
+            self.lbl_count.configure(text=f"Mis Pendientes ({actual})")
+            self.actualizar_barra_progreso(actual)
+        except:
+            self.sync_classroom()
 
 if __name__ == "__main__":
     app = AppEstudio()
