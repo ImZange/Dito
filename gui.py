@@ -194,3 +194,5 @@ class AppEstudio(ctk.CTk):
 if __name__ == "__main__":
     app = AppEstudio()
     app.mainloop()
+
+#a
